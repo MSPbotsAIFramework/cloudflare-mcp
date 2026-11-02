@@ -1,0 +1,121 @@
+[
+  {
+    "id": "TC1",
+    "ac": "AC1",
+    "text": "Given a valid Cloudflare API token in the credential header, When the agent calls cloudflare_list_zones, Then it returns the zones reachable by that token (id, name, status, plan), paginated with has_more set correctly",
+    "type": "auto",
+    "tests": ["tests/test_tools.py::test_list_zones_returns_paginated_zones_for_token"]
+  },
+  {
+    "id": "TC2",
+    "ac": "AC2",
+    "text": "Given the Cloudflare credential header is missing, When any cloudflare_* tool is called, Then the service returns 401 with a body listing the required header name, not a 500",
+    "type": "auto",
+    "tests": ["tests/test_middleware.py::test_missing_credential_header_returns_401"]
+  },
+  {
+    "id": "TC3",
+    "ac": "AC3",
+    "text": "Given a zone_id, When the agent calls cloudflare_list_dns_records with type and name filters, Then only matching records are returned (id, type, name, content, ttl, proxied)",
+    "type": "auto",
+    "tests": ["tests/test_tools.py::test_list_dns_records_filters_by_type_and_name"]
+  },
+  {
+    "id": "TC4",
+    "ac": "AC4",
+    "text": "Given valid new-record fields (type, name, content; ttl/proxied optional), When the agent calls cloudflare_create_dns_record, Then a record is created and returned with its Cloudflare-assigned id",
+    "type": "auto",
+    "tests": ["tests/test_tools.py::test_create_dns_record_returns_created_record_with_id"]
+  },
+  {
+    "id": "TC5",
+    "ac": "AC5",
+    "text": "Given an existing record_id and only a subset of fields to change, When the agent calls cloudflare_update_dns_record, Then only those fields change and every other existing field on the record is preserved",
+    "type": "auto",
+    "tests": ["tests/test_tools.py::test_update_dns_record_preserves_unspecified_fields"]
+  },
+  {
+    "id": "TC6",
+    "ac": "AC6",
+    "text": "Given an existing record_id, When the agent calls cloudflare_delete_dns_record, Then the upstream delete call is made and a success confirmation (deleted record id) is returned",
+    "type": "auto",
+    "tests": ["tests/test_tools.py::test_delete_dns_record_sends_delete_and_returns_confirmation"]
+  },
+  {
+    "id": "TC7",
+    "ac": "AC7",
+    "text": "Given a record_id that does not exist, When the agent calls cloudflare_update_dns_record or cloudflare_delete_dns_record, Then the tool returns a structured not_found error instead of raising an exception",
+    "type": "auto",
+    "tests": ["tests/test_tools.py::test_update_and_delete_missing_record_return_not_found"]
+  },
+  {
+    "id": "TC8",
+    "ac": "AC8",
+    "text": "Given a zone_id, When the agent calls cloudflare_purge_cache with mode=\"everything\", Then a full-zone purge request is sent to Cloudflare and a success confirmation is returned",
+    "type": "auto",
+    "tests": ["tests/test_tools.py::test_purge_cache_everything_calls_purge_cache_endpoint"]
+  },
+  {
+    "id": "TC9",
+    "ac": "AC9",
+    "text": "Given a zone_id and a list of urls/tags/hosts, When the agent calls cloudflare_purge_cache with mode=\"files\"/\"tags\"/\"hosts\", Then only the targeted items are sent in the purge request, not a full-zone purge",
+    "type": "auto",
+    "tests": ["tests/test_tools.py::test_purge_cache_files_tags_hosts_sends_targeted_request"]
+  },
+  {
+    "id": "TC10",
+    "ac": "AC10",
+    "text": "Given the upstream Cloudflare API responds with 429 or a 5xx, When any tool calls it, Then the tool returns the structured error envelope (code rate_limited or upstream_error) after limited retries honoring Retry-After, instead of raising",
+    "type": "auto",
+    "tests": ["tests/test_tools.py::test_upstream_429_and_5xx_return_structured_errors_not_exceptions"]
+  },
+  {
+    "id": "TC11",
+    "ac": "AC11",
+    "text": "Given two concurrent requests carrying different Cloudflare API tokens, When both call cloudflare_list_zones at the same time, Then each response contains only the zones reachable by its own token and neither token value appears in the other request's logs",
+    "type": "auto",
+    "tests": ["tests/test_middleware.py::test_concurrent_requests_with_different_tokens_do_not_leak_credentials"]
+  },
+  {
+    "id": "TC12",
+    "ac": "AC1",
+    "text": "Given a real Cloudflare account and a real API token, When cloudflare_list_zones is called against the live Cloudflare API, Then it returns that account's actual zones, confirming the mocked tests match the real v4 response shape",
+    "type": "manual",
+    "steps": [
+      "Obtain a real Cloudflare API token scoped to Zone:Read on a test account/zone",
+      "Run the MCP server locally with MCP_HTTP_PORT default, send initialize then tools/call cloudflare_list_zones with the token in the X-Cloudflare-Api-Token header",
+      "Compare the returned zone list against what the Cloudflare dashboard shows for that account"
+    ],
+    "expect": "Returned zones (id, name, status, plan) match the dashboard; no error",
+    "result": "untested",
+    "notes": "needs a real vendor account; not required before INT publish"
+  },
+  {
+    "id": "TC13",
+    "ac": "AC6",
+    "text": "Given a real test zone, When a DNS record is created then deleted via the live tools, Then the record is actually gone from Cloudflare's own DNS records list for that zone",
+    "type": "manual",
+    "steps": [
+      "Using a real token, call cloudflare_create_dns_record on a disposable test zone (e.g. a TXT record)",
+      "Call cloudflare_delete_dns_record with the returned record id",
+      "Call cloudflare_list_dns_records (or the Cloudflare dashboard) for that zone and confirm the record is absent"
+    ],
+    "expect": "Record no longer appears in the zone's DNS record list",
+    "result": "untested",
+    "notes": "needs a real vendor account; not required before INT publish"
+  },
+  {
+    "id": "TC14",
+    "ac": "AC8",
+    "text": "Given a real test zone with a cached asset, When cloudflare_purge_cache is called with mode=\"everything\", Then a subsequent fetch of that asset shows a fresh cf-cache-status (MISS/EXPIRED) instead of HIT",
+    "type": "manual",
+    "steps": [
+      "Fetch a cached asset on the test zone and confirm cf-cache-status: HIT",
+      "Call cloudflare_purge_cache with mode=\"everything\" for that zone",
+      "Re-fetch the same asset and inspect cf-cache-status"
+    ],
+    "expect": "cf-cache-status is no longer HIT immediately after the purge call returns success",
+    "result": "untested",
+    "notes": "needs a real vendor account; not required before INT publish"
+  }
+]
