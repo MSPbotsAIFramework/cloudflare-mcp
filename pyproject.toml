@@ -1,0 +1,34 @@
+[project]
+name = "cloudflare-mcp"
+version = "0.1.0"
+description = "Cloudflare MCP server for the MSPbots Agent platform"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "Apache-2.0" }
+dependencies = [
+    "fastmcp>=2.0.0,<3.0.0",
+    "mcp>=1.9.0,<2.0.0",
+    "httpx>=0.27.0,<1.0.0",
+    "pydantic-settings>=2.4.0,<3.0.0",
+    "uvicorn>=0.30.0,<1.0.0",
+]
+
+[project.scripts]
+cloudflare-mcp = "cloudflare_mcp.__main__:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0,<9.0.0",
+    "pytest-asyncio>=0.24.0,<1.0.0",
+    "respx>=0.21.0,<1.0.0",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/cloudflare_mcp"]
