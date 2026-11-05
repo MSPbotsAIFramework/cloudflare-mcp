@@ -1,5 +1,7 @@
 # PRD-21323 · Code review
 
+Status: frozen @ 3579881
+
 ## Round 1 · 2026-11-05 · reviewed 136d49e (base c997f76)
 
 Verdict: changes requested
@@ -36,3 +38,33 @@ Neither finding touches the Round 1 fix itself, which is correct and well-tested
 2. **Commit identity on `dev/PRD-21323`** — set this worktree's local (repo-scoped, not machine-global) `user.name`/`user.email` to `Dev01.MBAgent <dev01.mbagent@mspbots.ai>`, then `git rebase 853b3ae --exec 'git commit --amend --no-edit --author="Dev01.MBAgent <dev01.mbagent@mspbots.ai>"'` (committer date preserved per commit via `GIT_COMMITTER_DATE`, so only identity changed, not history timing). This re-authored all 6 commits after the design commit, including the Round 2 review commit itself (`729e41b`, the SOP's "author and committer both, regardless of which host made it" applies to it too — it would otherwise also land on `main` with the wrong identity): `101a00f`→`a2f9ac8`, `136d49e`→`9a27d22`, `b61c006`→`dc29697`, `5c30bff`→`662376e`, `5fe3960`→`83dbeaa`, `729e41b`→`3db56ad`. Verified content-identical: `git diff 729e41b..3db56ad` is empty — identity-only change, no content drift. `git log` on `853b3ae..3db56ad` confirms every commit now shows author and committer `Dev01.MBAgent <dev01.mbagent@mspbots.ai>`.
 3. **Retest, on the re-authored `dev/PRD-21323` synced with `main @ c997f76`** (unchanged — `main` has not advanced since Round 1): `uv run pytest -q` → `20 passed` (same count as Round 1; the two new warnings shown are pre-existing third-party `AuthlibDeprecationWarning`s, unrelated to this round's changes, no `ResourceWarning`s). `README.md` untouched by this round (diff against the design commit's addition is unchanged). Chinese-content scan, rerun on the committed tree after the fix: `grep -rnP '[\x{4e00}-\x{9fff}]' --exclude-dir=.git --exclude-dir=.venv .` now returns **zero hits in all deliverable content** (code, README, `docs/tickets/PRD-21323.md`, the retest note itself). The only two remaining matches in the whole tree are in *this* review document, at the Round 2 "New findings" entries above (line 28's quotation of the original offending string `（有就跑）`, kept verbatim as evidence of what was found, and line 29's citation of `toolchain.md`'s Chinese section heading `提交署名：一律 dev01`) — both are the reviewer's own evidentiary quotations from Round 2, written before this fix and outside this round's must-fix scope (which named only line 15), so they are left as-is rather than rewritten by the party being reviewed.
 4. Commits: `83dbeaa` (text fix, carried via re-author of `5fe3960`) and `3db56ad` (re-authored Round 2 commit) on `dev/PRD-21323`. Force-pushed to `origin/dev/PRD-21323` with `--force-with-lease` (work branch only).
+
+## Round 3 · 2026-11-05 · reviewed 3579881 (base c997f76)
+
+Verdict: approved
+
+### Round 2 fix verification
+
+Both Round 2 must-fixes independently confirmed resolved:
+
+1. **Chinese text** — `docs/tickets/PRD-21323-review.md:15` now reads `gitleaks detect (skip if not installed)` (English). Independently reran `grep -rnP '[\x{4e00}-\x{9fff}]' --exclude-dir=.git --exclude-dir=.venv .` from the repo root: 4 hits remain, all inside this review document's own Round 2 "New findings"/"Fixes" narrative (lines 28, 29, 35, 37), quoting the original violating string and a Chinese section heading from `toolchain.md` as evidentiary citations of what was found and fixed. None are in shipped content (`src/`, `README.md`, `docs/tickets/PRD-21323.md`, `.env.example`, `Dockerfile`). See "Verdict rationale" below for why this is recorded as a suggestion rather than reopened as a must-fix.
+2. **Commit identity** — independently inspected `git log --format="%H %an <%ae> %cn <%ce>" 853b3ae..HEAD`: all 7 commits after the design commit (`a2f9ac8`, `9a27d22`, `dc29697`, `662376e`, `83dbeaa`, `3db56ad`, `3579881`) show author and committer `Dev01.MBAgent <dev01.mbagent@mspbots.ai>`, matching the pipeline-mandated identity. A `rebase --exec 'commit --amend --author=...'` can only rewrite commit metadata, never tree content, so the claimed content-identical rewrite holds by construction; independently corroborated anyway via `git diff --stat 3db56ad...HEAD`, which shows only `docs/tickets/PRD-21323-review.md` changed (the Round 2 "Fixes" write-up itself) — no source or test file differs between the pre-rebase-equivalent commit and the current tip.
+
+### New findings (diff 3db56ad...3579881)
+
+None. The only change in this range is the "### Fixes (round 2)" section added to this review document (documenting the fixes verified above); no source, test, or config file changed.
+
+### Independent verification run this round
+
+- `uv run pytest -q` (via `python3 -m uv`; `uv` is missing from `PATH` on this host, matching `mbp.py doctor`'s known gap) → `20 passed, 2 warnings`, the same count and the same two pre-existing `AuthlibDeprecationWarning`s the dev reported; no `ResourceWarning`s.
+- Chinese-content scan: see "Round 2 fix verification" above.
+- README Connector section: byte-for-byte verbatim substring match against `~/.claude/skills/vendor-mcp-development/reference/readme-connector-section.md` (checked programmatically, not by eye).
+- Spot-read `src/cloudflare_mcp/tools/__init__.py`, `client.py`, `middleware.py`: the Cloudflare credential travels only in the `X-Cloudflare-Api-Token` header, is read into a per-request `contextvars.ContextVar` by `CredentialMiddleware.dispatch()` and reset in a `finally` (`middleware.py:61-65`), so it cannot leak across concurrent requests; `CloudflareClient` holds no global state and is constructed fresh per call (`client.py:41-53`), is never logged, and is now closed in `run_tool()`'s `finally` (Round 1 fix re-confirmed correct on reread: the `return dumps(result)` at the end is only reached on the success path since both `except` branches return before falling through). `.env.example` carries no credentials — only non-secret runtime config, with a comment explaining why. `Dockerfile` runs the production image as `uid=1001 app` (non-root) with a multi-stage build.
+- `docs/tickets/PRD-21323.ac.json`: 14 cases, 11 `pass` (each with a `tests` pointer into `tests/`), 3 `untested` (TC12–TC14, all explicitly noted `needs a real vendor account; not required before INT publish`, per `mcp-track.md` §3 "没有测试账号不算阻塞"). No case is red or silently skipped.
+- `git status` on the worktree: clean.
+
+### Verdict rationale
+
+1 suggestion, no must-fix. The code is ready to merge.
+
+1. [suggestion] `docs/tickets/PRD-21323-review.md:28,29,35,37` — quoted Chinese text remains in this review document's own Round 2 narrative (see "Round 2 fix verification" above). Not treated as a must-fix: `mcp-track.md` §4.3's "no Chinese in the repo" bullet exists to keep the shipped connector and its docs English-only for any downstream reader (customers, other engineers, the connector wiki); it is not meant to forbid an internal audit trail from quoting, as evidence, the exact Chinese string a prior round found and the dev then removed. Applying the general heuristic in `legs/review.md` R3 ("会不会让 BA 验收失败或让线上出错") also resolves this as non-blocking: nothing here is shipped, user-visible, or executed at runtime. If a future repo-wide automated Chinese-content CI gate starts treating this review document as in-scope, reword the quotations (transliterate, or describe without quoting verbatim) rather than deleting the evidentiary record.
