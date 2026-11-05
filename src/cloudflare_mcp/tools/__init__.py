@@ -41,4 +41,17 @@ async def run_tool(
         return error_envelope_from(exc)
     except Exception as exc:  # noqa: BLE001 -- last-resort boundary, see Section 4.2
         return error_envelope("upstream_error", f"Unexpected error calling Cloudflare: {exc}")
+    finally:
+        # PRD-21323 review round 1: client_factory() builds one client per
+        # tool call (Section 3.3/3.4); nobody else owns it, so this is the
+        # only place that can close it. Without this, every cloudflare_*
+        # call leaked an open connection pool (unclosed httpx.AsyncClient).
+        # aclose() itself is a no-op when a test injected the client
+        # (CloudflareClient._owns_client is False), and swallowing a close
+        # failure here is deliberate: a cleanup error must not shadow the
+        # tool result/error already produced above.
+        try:
+            await client.aclose()
+        except Exception:  # noqa: BLE001 -- cleanup must never raise past the tool boundary
+            pass
     return dumps(result)

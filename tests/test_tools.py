@@ -276,3 +276,51 @@ async def test_upstream_401_maps_to_unauthorized_not_a_crash(mcp):
     out = await call_tool(mcp, "cloudflare_list_zones", {})
     assert out["error"]["code"] == "unauthorized"
     assert out["error"]["retryable"] is False
+
+
+# ---------------------------------------------------------------------------
+# Review round 1 must-fix: run_tool() must close the per-call client on
+# every path, not leak the connection pool (src/cloudflare_mcp/tools/
+# __init__.py:35, root cause server.py:47, client.py:45-57).
+# ---------------------------------------------------------------------------
+
+
+@respx.mock
+async def test_run_tool_closes_the_client_on_success():
+    from cloudflare_mcp.client import CloudflareClient
+    from cloudflare_mcp.tools import run_tool
+
+    respx.get(f"{BASE}/zones/z1").mock(return_value=httpx.Response(200, json=cf_envelope({"id": "z1"})))
+    created: list[CloudflareClient] = []
+
+    def factory():
+        client = CloudflareClient("test-token")
+        created.append(client)
+        return client
+
+    await run_tool(factory, lambda client: client.get_zone("z1"))
+
+    assert created[0]._client.is_closed
+
+
+@respx.mock
+async def test_run_tool_closes_the_client_when_body_raises():
+    from cloudflare_mcp.client import CloudflareClient
+    from cloudflare_mcp.tools import run_tool
+
+    created: list[CloudflareClient] = []
+
+    def factory():
+        client = CloudflareClient("test-token")
+        created.append(client)
+        return client
+
+    async def body(_client):
+        raise RuntimeError("boom")
+
+    out = await run_tool(factory, body)
+
+    assert created[0]._client.is_closed
+    import json as _json
+
+    assert _json.loads(out)["error"]["code"] == "upstream_error"
